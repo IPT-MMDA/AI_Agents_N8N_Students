@@ -1,0 +1,359 @@
+{
+  "name": "Check_last_hour_for_fire",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "triggerAtMinute": 5
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "6e7c8871-fa95-46c2-954e-f943b720a139",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH last_hour AS (\n    SELECT day, hour\n    FROM pm25_hourly\n    ORDER BY day DESC, hour DESC\n    LIMIT 1\n),\ncur AS (\n    SELECT h.oblast, h.day, h.hour, h.avg_pm25 AS cur_avg, h.stations\n    FROM pm25_hourly h\n    JOIN last_hour l \n      ON h.day = l.day AND h.hour = l.hour\n),\nprev AS (\n    SELECT h.oblast, h.avg_pm25 AS prev_avg\n    FROM pm25_hourly h\n    JOIN last_hour l \n      ON h.day = CASE \n                    WHEN l.hour > 0 THEN l.day \n                    ELSE l.day - INTERVAL '1 day' \n                 END\n     AND h.hour = CASE \n                    WHEN l.hour > 0 THEN l.hour::int - 1\n                    ELSE 23\n                 END\n)\nSELECT c.oblast, c.day, c.hour,\n       c.cur_avg, p.prev_avg,\n       ROUND((c.cur_avg - p.prev_avg)::numeric, 2)::double precision AS delta\nFROM cur c\nLEFT JOIN prev p USING (oblast)\nWHERE c.stations >= 1\n  AND p.prev_avg IS NOT NULL\n  AND ABS(c.cur_avg - p.prev_avg) >= 1;  -- поріг \n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        208,
+        0
+      ],
+      "id": "02ad6676-01c0-4b4f-8c38-c4e73582236b",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "PGSaM7PSeBcZoF2B",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        416,
+        0
+      ],
+      "id": "2ca4fb86-aae3-4ce6-8ff5-8d067697f77c",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "url": "={{\n  `https://api.open-meteo.com/v1/forecast?latitude=${$json.lat}&longitude=${$json.lon}` +\n  `&hourly=wind_speed_10m,relative_humidity_2m,precipitation&past_days=1&timezone=Europe%2FKyiv`\n}}\n",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        848,
+        16
+      ],
+      "id": "b129614c-2005-4fab-aa36-8295d3022b88",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "const h = $json.hourly;\nfunction pick(series){ const i=h.time.length-1, p=Math.max(0,i-1); return {cur:series[i], prev:series[p]}; }\nconst wind = pick(h.wind_speed_10m);\nconst rh   = pick(h.relative_humidity_2m);\nconst rain = pick(h.precipitation);\n\n\nconst base = $items('Prepare_coords', 0, 0)[0].json;\nreturn [{\n  json: {\n    ...base,\n    meteo: { wind_cur:wind.cur, rh_cur:rh.cur, rain_cur:rain.cur }\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1056,
+        16
+      ],
+      "id": "1a39e986-cdf9-4980-b4ec-969a83c5923b",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const GEO = {\n  'Kyiv City': {lat:50.45, lon:30.52}, 'Kyiv': {lat:50.30, lon:30.30},\n  'Lviv': {lat:49.84, lon:24.03}, 'Dnipropetrovsk': {lat:48.45, lon:35.05},\n  'Kharkiv': {lat:49.99, lon:36.23}, 'Odesa': {lat:46.48, lon:30.73},\n  'Mykolaiv': {lat:46.97, lon:31.99}, 'Kherson': {lat:46.64, lon:32.62},\n  'Zaporizhzhia': {lat:47.84, lon:35.14}, 'Donetsk': {lat:48.00, lon:37.80},\n  'Luhansk': {lat:48.57, lon:39.31}, 'Poltava': {lat:49.59, lon:34.55},\n  'Sumy': {lat:50.91, lon:34.80}, 'Chernihiv': {lat:51.50, lon:31.30},\n  'Zhytomyr': {lat:50.25, lon:28.66}, 'Rivne': {lat:50.74, lon:26.14},\n  'Volyn': {lat:50.74, lon:25.32}, 'Ternopil': {lat:49.55, lon:25.59},\n  'Ivano-Frankivsk': {lat:48.92, lon:24.71}, 'Zakarpattia': {lat:48.62, lon:22.30},\n  'Chernivtsi': {lat:48.29, lon:25.94}, 'Khmelnytskyi': {lat:49.42, lon:26.99},\n  'Vinnytsia': {lat:49.23, lon:28.48}, 'Kirovohrad': {lat:48.51, lon:32.26},\n  'Cherkasy': {lat:49.44, lon:32.06}, 'Zaporizhzhia': {lat:47.84, lon:35.14}\n};\nconst x = $json;                         \nconst g = GEO[x.oblast] || GEO['Kyiv City'];\nconst box = 1.2;\nreturn [{\n  json: {\n    ...x,\n    lat: g.lat, lon: g.lon,\n    bbox: {minLat:g.lat-box, minLon:g.lon-box, maxLat:g.lat+box, maxLon:g.lon+box}\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        16
+      ],
+      "id": "c82e7fe9-106a-4945-bcbd-14694a2caefc",
+      "name": "Prepare_coords"
+    },
+    {
+      "parameters": {
+        "url": "={{\n`https://firms.modaps.eosdis.nasa.gov/api/area/csv/${$vars.FIRMS_TOKEN}/VIIRS_SNPP_NRT/world/1?bbox=${$json.bbox.minLon},${$json.bbox.minLat},${$json.bbox.maxLon},${$json.bbox.maxLat}`\n}}\n",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1248,
+        16
+      ],
+      "id": "ee5d3c9b-5715-45f4-a18d-8c57d07866d7",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const it = $input.first();\n\n\nlet csvText = '';\nif (it.binary?.data?.data) {\n  const enc = it.binary.data.encoding || 'base64';\n  csvText = Buffer.from(it.binary.data.data, enc).toString('utf8');\n} else if (typeof it.json === 'string') {\n  csvText = it.json;\n} else if (typeof it.json?.data === 'string') {\n  csvText = it.json.data;\n} else {\n  throw new Error('CSV not found. Expected binary \"data\" or a string in json. ' +\n                  'Check HTTP node: Response=\"File (Binary)\", Binary Property=\"data\".');\n}\ncsvText = csvText.trim().replace(/\\r/g, '');\n\n\nconst base = ($items('Code in JavaScript1', 0, 0)[0]?.json) ?? {};\n\n\nif (!csvText) {\n  return [{ json: { ...base, fires_last12h: 0 } }];\n}\n\n\nconst lines = csvText.split('\\n');\nconst header = lines.shift().split(',');\nconst ix = {\n  lat:  header.indexOf('latitude'),\n  lon:  header.indexOf('longitude'),\n  date: header.indexOf('acq_date'),\n  time: header.indexOf('acq_time'),\n};\n\nfunction toTs(d, t) {\n  const hhmm = String(t).padStart(4, '0');\n  const hh = hhmm.slice(0, 2), mm = hhmm.slice(2, 4);\n  return Date.parse(`${d}T${hh}:${mm}:00Z`) / 1000;\n}\n\nconst {minLat, minLon, maxLat, maxLon} = base.bbox || {};\nconst now = Date.now() / 1000;\nconst win = 12 * 3600;\n\nlet fires12 = 0;\n\nfor (const row of lines) {\n  const c = row.split(',');\n  const lat = parseFloat(c[ix.lat]);\n  const lon = parseFloat(c[ix.lon]);\n  if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;\n  if (!(lat >= minLat && lat <= maxLat && lon >= minLon && lon <= maxLon)) continue;\n\n  const ts = toTs(c[ix.date], c[ix.time]);\n  if (Number.isFinite(ts) && (now - ts) <= win) fires12++;\n}\n\nreturn [{ json: { ...base, fires_last12h: fires12 } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1456,
+        16
+      ],
+      "id": "2fe40712-6ac0-4477-899b-e5579b0e24fd",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "jsCode": "const x = $json;\n\nlet reasons = [];\nif (x.fires_last12h >= 1) reasons.push({k: 'wildfires near bbox', score: Math.min(1, x.fires_last12h / 5)});\nif ((x.meteo?.wind_cur ?? 0) <= 2.5 && (x.meteo?.rh_cur ?? 0) >= 80 && (x.meteo?.rain_cur ?? 0) === 0)\n  reasons.push({k: 'stagnant air / inversion risk', score: 0.4});\nif ((x.meteo?.rain_cur ?? 0) > 0.2)\n  reasons.push({k: 'rain likely reduced particulates', score: 0.3});\n\nreasons.sort((a,b) => b.score - a.score);\nconst best = reasons[0] || {k: 'no clear driver', score: 0};\n\nconst notify = (x.delta >= 1) || (x.cur_avg >= 5) || (x.fires_last12h >= 1);\n\nconst sign = x.delta > 0 ? '+' : '';\nconst msg =\n`⚠️ PM2.5 spike in ${x.oblast}\nΔ: ${sign}${x.delta.toFixed(2)} µg/m³ (cur: ${x.cur_avg}, prev: ${x.prev_avg})\nReason: ${best.k}\nMeteo: wind ${x.meteo?.wind_cur ?? '-'} m/s, RH ${x.meteo?.rh_cur ?? '-'}%, rain ${x.meteo?.rain_cur ?? 0} mm\nFIRMS (12h, bbox): ${x.fires_last12h}\nTime: ${x.day} ${String(x.hour).padStart(2,'0')}:00`;\n\nreturn [{ json: { ...x, explanation: best, notify, message: msg } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1664,
+        16
+      ],
+      "id": "ce122f75-4dfb-43c5-9135-c595a74186cb",
+      "name": "Code in JavaScript2"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "3a7c6289-bf7c-4c2a-8467-6123cfa4fce9",
+              "leftValue": "={{$json.notify}}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "9cb14bdd-2637-4aa9-83eb-75cfc764547f",
+              "leftValue": "",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1872,
+        16
+      ],
+      "id": "2b2879f4-76ef-46c0-9b9d-1aaaf51b912b",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO pm25_events\n  (day, hour, oblast, cur_avg, prev_avg, delta,\n   fires12h, wind, rh, rain, factors, reason, reason_score)\nVALUES\n(\n  '{{ $json.day.split(\"T\")[0] }}'::date,           \n  {{ $json.hour }},\n  '{{ $json.oblast }}',\n  {{ $json.cur_avg }},\n  {{ $json.prev_avg }},\n  {{ $json.delta }},\n  {{ $json.fires_last12h }},\n  {{ $json.meteo?.wind_cur ?? 'NULL' }},          \n  {{ $json.meteo?.rh_cur ?? 'NULL' }},\n  {{ $json.meteo?.rain_cur ?? 'NULL' }},\n  '{{ JSON.stringify({\n        thresholds: { delta: 5, fires12h: 1 },   \n        meteo: $json.meteo ?? null               \n      }) }}'::jsonb,\n  '{{ $json.explanation.k }}',\n  {{ $json.explanation.score }}\n)\nON CONFLICT (day, hour, oblast) DO UPDATE\nSET\n  cur_avg      = EXCLUDED.cur_avg,\n  prev_avg     = EXCLUDED.prev_avg,\n  delta        = EXCLUDED.delta,\n  fires12h     = EXCLUDED.fires12h,\n  wind         = EXCLUDED.wind,\n  rh           = EXCLUDED.rh,\n  rain         = EXCLUDED.rain,\n  factors      = COALESCE(pm25_events.factors, '{}'::jsonb) || EXCLUDED.factors,\n  reason       = EXCLUDED.reason,\n  reason_score = EXCLUDED.reason_score,\n  inserted_at  = now();\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2144,
+        0
+      ],
+      "id": "bcaaa75a-075f-4ee5-8df8-f26a81ae8fda",
+      "name": "Execute a SQL query1",
+      "credentials": {
+        "postgres": {
+          "id": "PGSaM7PSeBcZoF2B",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Prepare_coords",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare_coords": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "5d8d2bab-3fa2-4f0e-9791-72c9b5822b69",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "4e5b0ec07144cbfc2bc5e3ffa2c8c6b23571e4ea9fc98b87f0501bd785e77be3"
+  },
+  "id": "70O9eBpVVunpwamQ",
+  "tags": []
+}

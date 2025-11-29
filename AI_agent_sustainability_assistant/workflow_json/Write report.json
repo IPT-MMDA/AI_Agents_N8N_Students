@@ -1,0 +1,234 @@
+{
+  "name": "Write report",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "27108d2d-12c2-40ff-901a-781beb0b3d80",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH w AS (\n  SELECT date_trunc('week', CURRENT_DATE - 1)::date AS week_start\n)\nSELECT\n  h.oblast,\n  COUNT(*)                                            AS records,\n  COUNT(*) FILTER (WHERE h.avg_pm25 >= {{ $vars.PM25_LIMIT ?? 10 }}) AS exceed_hours,\n  ROUND(AVG(h.avg_pm25)::numeric, 2)                  AS mean,\n  ROUND(MAX(h.avg_pm25)::numeric, 1)                  AS peak,\n  MIN(h.day)::date                                    AS first_day,\n  MAX(h.day)::date                                    AS last_day,\n  MAX(h.stations)                                     AS max_stations\nFROM pm25_hourly h, w\nWHERE h.day >= w.week_start\n  AND h.day <  w.week_start + INTERVAL '7 day'\n  AND h.stations >= {{ $vars.MIN_STATIONS ?? 1 }}\nGROUP BY h.oblast\nORDER BY exceed_hours DESC, mean DESC;\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        208,
+        0
+      ],
+      "id": "e16a237f-4fa1-4688-a2bc-61e0d90a22e1",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "PGSaM7PSeBcZoF2B",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(i => i.json);     // якщо SQL повертає N рядків\nconst week = {\n  start: rows[0]?.first_day || null,\n  end:   rows[0]?.last_day  || null,\n  limit: $vars.PM25_LIMIT ?? 10\n};\n\nreturn [{\n  json: {\n    week,\n    rows: rows.map(r => ({\n      oblast: r.oblast,\n      mean:   Number(r.mean),\n      peak:   Number(r.peak),\n      exceed_hours: Number(r.exceed_hours),\n      max_stations: Number(r.max_stations)\n    }))\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        0
+      ],
+      "id": "83b47c55-a4e9-47a3-9761-4431c214bde8",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Виступай як аналітик якості повітря. Нижче — тижневі агрегати PM2.5 по областях (JSON):\n\n{{ $json | json }}\n\nТВОЄ ЗАВДАННЯ:\n1) Сформуй ЗВІТ СТРОГО у форматі, який задає Output Parser (JSON schema).\n2) Поле \"highlights\" — масив об’єктів з ключами: oblast, mean, peak, exceed_hours, max_stations (якщо є), fires_share_pct (якщо є), drivers (масив коротких причин).\n3) Поле \"summary\" — короткий 1–3 речення підсумок.\n\nВАЖЛИВО:\n- Виводь ЛИШЕ валідний JSON згідно схеми. Без пояснень, без преамбул.\n- Не додавай жодного тексту поза JSON.\n- Використовуй тиждень тільки з вхідного JSON: week.start та week.end.\n- Не вигадуй дати, не змінюй формат. Скопіюй week.start/week.end дослівно.\n- Виводь ЛИШЕ валідний JSON за схемою.\n[REQUIRED] week.start = {{ $json.week.start }}\n[REQUIRED] week.end   = {{ $json.week.end }}\n{{ JSON.stringify($json.rows, null, 2) }}\n\nВикористовуй ТІЛЬКИ дані з цього JSON. Нічого не вигадуй.",
+        "hasOutputParser": true,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        624,
+        0
+      ],
+      "id": "a67cdb21-91a5-4bab-9e56-5627daa5f4cb",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "={\n  \"type\": \"object\",\n  \"properties\": {\n    \"week\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"start\": { \"type\": \"string\" },\n        \"end\":   { \"type\": \"string\" },\n        \"limit\": { \"type\": \"integer\" }\n      },\n      \"required\": [\"start\", \"end\"]\n    },\n    \"highlights\": {\n      \"description\": \"Топ-області з перевищеннями за тиждень\",\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"oblast\":        { \"type\": \"string\" },\n          \"mean\":          { \"type\": \"number\" },\n          \"peak\":          { \"type\": \"number\" },\n          \"exceed_hours\":  { \"type\": \"integer\" },\n          \"max_stations\":  { \"type\": \"integer\" },\n          \"fires_share_pct\": { \"type\": \"number\" },\n          \"drivers\": {\n            \"type\": \"array\",\n            \"items\": { \"type\": \"string\" }\n          }\n        },\n        \"required\": [\"oblast\", \"mean\", \"peak\", \"exceed_hours\"]\n      }\n    },\n    \"summary\": { \"type\": \"string\" }\n  },\n  \"required\": [\"highlights\", \"summary\"]\n}\n"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        800,
+        208
+      ],
+      "id": "6b3e3d82-467d-4196-8ca8-9ee9f605b504",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "jsCode": "const src0 = $input.first()?.json ?? {};\nconst src = (src0 && src0.output) ? src0.output : src0;\n\nconst errors = [];\nconst warnings = [];\n\nconst asString = (v) => (v == null ? '' : String(v)).trim();\n\nconst asNumber = (v) => {\n  if (typeof v === 'number') return v;\n  if (typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v))) {\n    return Number(v);\n  }\n  return NaN;\n};\n\nconst pushErr = (path, msg) => errors.push(`${path}: ${msg}`);\nconst pushWarn = (path, msg) => warnings.push(`${path}: ${msg}`);\n\nconst isISO = (s) => {\n  try {\n    if (typeof s !== 'string') return false;\n    const d = new Date(s);\n    if (Number.isNaN(d.getTime())) return false;\n    return /T/.test(s);\n  } catch (_) {\n    return false;\n  }\n};\n\nconst clamp = (x, lo, hi) =>\n  Number.isFinite(x) ? Math.min(Math.max(x, lo), hi) : x;\n\nconst uniq = (arr) => Array.from(new Set(arr));\n\nconst checkNonNeg = (n, path) => {\n  if (!Number.isFinite(n)) {\n    pushErr(path, 'must be a finite number');\n    return null;\n  }\n  if (n < 0) {\n    pushWarn(path, `negative (${n}) → clamped to 0`);\n    return 0;\n  }\n  return n;\n};\n\nconst checkInRange = (n, lo, hi, path) => {\n  if (!Number.isFinite(n)) {\n    pushErr(path, 'must be a finite number');\n    return null;\n  }\n  if (n < lo || n > hi) {\n    pushWarn(path, `out of range [${lo}; ${hi}] (${n}) → clamped`);\n    return clamp(n, lo, hi);\n  }\n  return n;\n};\n\nconst out = {\n  week: { start: '', end: '' },\n  highlights: [],\n  summary: '',\n};\n\nconst week = src.week ?? {};\nconst start = asString(week.start);\nconst end = asString(week.end);\n\nif (!start) pushErr('week.start', 'is required');\nif (!end) pushErr('week.end', 'is required');\n\nif (start && !isISO(start)) pushErr('week.start', 'is not ISO-like date');\nif (end && !isISO(end)) pushErr('week.end', 'is not ISO-like date');\n\nif (isISO(start) && isISO(end)) {\n  const d1 = new Date(start).getTime();\n  const d2 = new Date(end).getTime();\n  if (d2 < d1) pushErr('week', 'end < start');\n  const days = (d2 - d1) / (1000 * 3600 * 24);\n  if (Number.isFinite(days) && days > 14) {\n    pushWarn('week', `period is ${days.toFixed(1)} days (> 14)`);\n  }\n}\n\nout.week.start = start;\nout.week.end = end;\n\nlet highlights = src.highlights;\nif (!Array.isArray(highlights)) {\n  highlights = [];\n  pushWarn('highlights', 'not an array → empty[]');\n}\n\nhighlights.forEach((h, i) => {\n  const path = `highlights[${i}]`;\n\n  const oblast = asString(h?.oblast);\n  if (!oblast) pushErr(`${path}.oblast`, 'is required and must be a non-empty string');\n\n  let mean = asNumber(h?.mean);\n  mean = checkInRange(mean, 0, 500, `${path}.mean`); \n\n  let peak = asNumber(h?.peak);\n  peak = checkInRange(peak, 0, 1000, `${path}.peak`); \n\n  let exceed_hours = asNumber(h?.exceed_hours);\n  exceed_hours = checkInRange(exceed_hours, 0, 24 * 7, `${path}.exceed_hours`);\n\n  let max_stations = asNumber(h?.max_stations);\n  max_stations = checkInRange(max_stations, 0, 1000, `${path}.max_stations`);\n\n  let drivers = Array.isArray(h?.drivers) ? h.drivers.map(asString).filter(Boolean) : [];\n  if (!Array.isArray(h?.drivers)) {\n    pushWarn(`${path}.drivers`, 'not an array → []');\n  }\n  drivers = uniq(drivers).slice(0, 10); \n\n  out.highlights.push({\n    oblast,\n    mean,\n    peak,\n    exceed_hours,\n    max_stations,\n    drivers,\n  });\n});\n\nconst summary = asString(src.summary);\nif (summary.length > 1000) {\n  pushWarn('summary', `too long (${summary.length}) → trimmed to 1000 chars`);\n}\nout.summary = summary.slice(0, 1000);\n\nconst ok = errors.length === 0;\n\nconst issuesText =\n  (errors.length ? `Errors:\\n- ${errors.join('\\n- ')}\\n` : '') +\n  (warnings.length ? `Warnings:\\n- ${warnings.join('\\n- ')}` : '');\n\nreturn [\n  {\n    json: {\n      ok,\n      errors,\n      warnings,\n      data: out,\n      issues_text: issuesText || 'No issues',\n    },\n  },\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        976,
+        16
+      ],
+      "id": "34cbfc44-ec21-4810-92a4-ab7add6c50d7",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "chatId": "174786113",
+        "text": "={{ $json.data.summary }}\n",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1184,
+        16
+      ],
+      "id": "f24b0a92-01b2-4aed-a050-4f8f80f60d6e",
+      "name": "Send a text message",
+      "webhookId": "366a6675-4090-43d5-9c7b-5689d8b373d7",
+      "credentials": {
+        "telegramApi": {
+          "id": "V4a9m8VyYssR64q1",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatAzureOpenAi",
+      "typeVersion": 1,
+      "position": [
+        480,
+        208
+      ],
+      "id": "0d91fcf0-e1ed-4a06-a365-d2cc07ada67e",
+      "name": "Azure OpenAI Chat Model",
+      "credentials": {
+        "azureOpenAiApi": {
+          "id": "NDrNouqioQ6nhBtR",
+          "name": "Azure Open AI account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Azure OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "fe2562ab-79a7-4d23-86e1-d5c0a1966559",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "4e5b0ec07144cbfc2bc5e3ffa2c8c6b23571e4ea9fc98b87f0501bd785e77be3"
+  },
+  "id": "20KlsWX4j3T14wgf",
+  "tags": []
+}

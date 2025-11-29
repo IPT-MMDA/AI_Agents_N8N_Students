@@ -1,0 +1,159 @@
+{
+  "name": "Wekly_rep",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "const p = $json.payload;       \nconst rows = Array.isArray(p.rows) ? p.rows : [];\nconst total = rows.reduce((s, r) => s + Number(r.exceed_hours || 0), 0);\n\nconst N = Number($vars.WEEKLY_N || 30);\n\nif (total <= N) return [];\n\nconst top = rows.slice(0, 5);\nconst lines = top.map((r, i) =>\n  `${i+1}. ${r.oblast} — ${r.exceed_hours} год (пік ${r.peak} µg/m³, середн. ${r.mean} µg/m³)`\n);\n\nconst period = `${p.start} — ${p.end}`;\nconst text =\n  `Щотижневий моніторинг PM2.5\\n` +\n  `Період: ${period}\\n` +\n  `Ліміт: ≥ ${p.limit} µg/m³\\n` +\n  `Випадків перевищення (годин): ${total}\\n\\n` +\n  `Топ-5 областей:\\n` +\n  (lines.length ? lines.join('\\n') : '— немає —');\n\nconst weekStart = p.start; \n\nreturn [{\n  json: {\n    text,\n    week_start: weekStart,\n    total_exceed: total\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        592,
+        0
+      ],
+      "id": "07c7ce44-24d2-4dcf-92fb-b96df3078434",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "chatId": "174786113",
+        "text": "={{$json.text}}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        768,
+        0
+      ],
+      "id": "9e755da5-0650-4f84-aceb-0eb64ae50576",
+      "name": "Send a text message",
+      "webhookId": "b79b9e91-edf7-442b-b7e3-c9f324e3e051",
+      "credentials": {
+        "telegramApi": {
+          "id": "V4a9m8VyYssR64q1",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        48,
+        0
+      ],
+      "id": "ae282878-4c09-43a5-99d9-2f049bf87042",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT jsonb_build_object(\n        'start', (CURRENT_DATE - INTERVAL '6 day')::date,\n        'end',   CURRENT_DATE::date,\n        'limit', {{ $vars.PM25_LIMIT ?? 10}},\n        'rows',\n        COALESCE(\n          jsonb_agg(row_to_json(t)),\n          '[]'::jsonb\n        )\n      ) AS payload\nFROM (\n  SELECT\n    h.oblast,\n    COUNT(*)                                      AS exceed_hours,\n    ROUND(MAX(h.avg_pm25)::numeric, 1)           AS peak,\n    ROUND(AVG(h.avg_pm25)::numeric, 1)           AS mean\n  FROM pm25_hourly h\n  WHERE h.day BETWEEN CURRENT_DATE - INTERVAL '6 day' AND CURRENT_DATE\n    AND h.avg_pm25 >= {{ $vars.PM25_LIMIT ?? 10}}\n    AND h.stations >= {{ $vars.MIN_STATIONS ?? 1 }}\n  GROUP BY h.oblast\n  ORDER BY exceed_hours DESC, peak DESC\n) t;\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        208,
+        0
+      ],
+      "id": "32a689db-17a2-4768-9896-663a89486d78",
+      "name": "executeQuery",
+      "credentials": {
+        "postgres": {
+          "id": "PGSaM7PSeBcZoF2B",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT jsonb_build_object(\n  'start', (CURRENT_DATE - INTERVAL '6 day')::date,\n  'end',   CURRENT_DATE::date,\n  'limit', {{ $vars.PM25_LIMIT ?? 10 }},\n  'rows',  COALESCE(jsonb_agg(row_to_json(t.*)), '[]'::jsonb)\n) AS payload\nFROM (\n  WITH hours AS (\n    SELECT\n      h.oblast,\n      COUNT(*)                                       AS exceed_hours,\n      ROUND(MAX(h.avg_pm25)::numeric, 1)             AS peak,\n      ROUND(AVG(h.avg_pm25)::numeric, 1)             AS mean\n    FROM pm25_hourly h\n    WHERE h.day BETWEEN CURRENT_DATE - INTERVAL '6 day' AND CURRENT_DATE\n      AND h.avg_pm25 >= {{ $vars.PM25_LIMIT ?? 10 }}\n      AND h.stations >= {{ $vars.MIN_STATIONS ?? 1 }}\n    GROUP BY h.oblast\n  ),\n  fires AS (\n    SELECT\n      e.oblast,\n      COUNT(*) AS exceed_cnt\n    FROM pm25_events e\n    WHERE e.day BETWEEN CURRENT_DATE - INTERVAL '6 day' AND CURRENT_DATE\n      AND e.reason = 'wildfires'               \n    GROUP BY e.oblast\n  )\n  SELECT\n    h.oblast,\n    h.exceed_hours,\n    h.peak,\n    h.mean,\n    COALESCE(f.exceed_cnt, 0) AS exceed_cnt,\n    CASE\n      WHEN h.exceed_hours > 0\n        THEN ROUND(100.0 * COALESCE(f.exceed_cnt, 0) / h.exceed_hours, 1)\n      ELSE 0\n    END AS wildfires_pct\n  FROM hours h\n  LEFT JOIN fires f USING (oblast)\n  ORDER BY h.exceed_hours DESC, h.oblast\n) t;\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        416,
+        0
+      ],
+      "id": "33ddc5c9-37af-4616-835a-30b06270a9de",
+      "name": "WeeklyFiresShare",
+      "credentials": {
+        "postgres": {
+          "id": "PGSaM7PSeBcZoF2B",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "executeQuery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "executeQuery": {
+      "main": [
+        [
+          {
+            "node": "WeeklyFiresShare",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WeeklyFiresShare": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "e0152d80-94ce-4ae5-b3ad-c16e821a59a4",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "4e5b0ec07144cbfc2bc5e3ffa2c8c6b23571e4ea9fc98b87f0501bd785e77be3"
+  },
+  "id": "8jUQqJLOpzn9wkXD",
+  "tags": []
+}

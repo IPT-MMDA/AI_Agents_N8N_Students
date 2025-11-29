@@ -1,0 +1,206 @@
+{
+  "name": "Send_report_2h",
+  "nodes": [
+    {
+      "parameters": {
+        "url": "https://api.saveecobot.com/output.json",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        416,
+        0
+      ],
+      "id": "2aa7d527-ac36-4a8e-949b-8379bd29b212",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {}
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "a937eef0-513c-4d76-b53a-2a17ed8441f9",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "const HOURS_BACK = 2;               \nconst WANT_POLLUTANT = 'PM2.5';     \n\nconst cityToOblast = new Map([\n  ['київ','Київ'], ['kyiv','Київ'],\n  ['львів','Львівська'], ['lviv','Львівська'],\n  ['харків','Харківська'], ['kharkiv','Харківська'],\n  ['дніпро','Дніпропетровська'], ['dnipro','Дніпропетровська'],\n  ['одеса','Одеська'], ['odesa','Одеська'],\n  ['полтава','Полтавська'], ['poltava','Полтавська'],\n  ['житомир','Житомирська'], ['zhytomyr','Житомирська'],\n  ['вінниця','Вінницька'], ['vinnytsia','Вінницька'],\n  ['суми','Сумська'], ['sumy','Сумська'],\n  ['чернігів','Чернігівська'], ['chernihiv','Чернігівська'],\n  ['черкаси','Черкаська'], ['cherkasy','Черкаська'],\n  ['запоріжжя','Запорізька'], ['zaporizhzhia','Запорізька'],\n  ['івано-франківськ','Івано-Франківська'], ['ivano-frankivsk','Івано-Франківська'],\n  ['ужгород','Закарпатська'], ['uzhhorod','Закарпатська'],\n  ['луцьк','Волинська'], ['lutsk','Волинська'],\n  ['чернівці','Чернівецька'], ['chernivtsi','Чернівецька'],\n  ['тернопіль','Тернопільська'], ['ternopil','Тернопільська'],\n  ['миколаїв','Миколаївська'], ['mykolaiv','Миколаївська'],\n  ['маріуполь','Донецька'], ['mariupol','Донецька'],\n  ['кривий ріг','Дніпропетровська'], ['kryvyi rih','Дніпропетровська'],\n  ['brovary', 'Київська'],\n  ['vyshenky', 'Київська'],\n  ['yuzhnoukrainsk', 'Миколаївська'],\n  ['verkhnivtseve', 'Дніпропетровська'],\n  ['lyshnia', 'Київська'],              \n  ['khrystynivka', 'Черкаська'],\n  ['trostianets', 'Сумська'],            \n  ['baranivka', 'Житомирська'],\n  ['khmilnyk', 'Вінницька'],\n  ['tomashpil', 'Вінницька'],\n  ['horishni plavni', 'Полтавська'],\n  ['vita-poshtova', 'Київська'],\n  ['kozyn', 'Київська'],\n  ['ivanyka', 'Київська'],               \n  ['berezhany', 'Тернопільська'],\n  ['mykolaivka', 'Дніпропетровська'],    \n  ['stepove', 'Дніпропетровська'],       \n  ['klavdievo-tarasove', 'Київська'],\n  ['bereznehuvatske', 'Миколаївська'],\n  ['zymne', 'Волинська'],\n  ['kazanka', 'Миколаївська'],\n  ['hoholove', 'Житомирська'],           \n  ['arbuzynka', 'Миколаївська'],\n  ['reia', 'Івано-Франківська'],         \n  ['kiliia', 'Одеська'],\n  ['zinkiv', 'Полтавська'],              \n  ['stebnyk', 'Львівська'],\n  ['tairove', 'Одеська'],\n  ['pokrov', 'Дніпропетровська'],\n  ['bobrovytsia', 'Чернігівська'],\n  ['nebelytsia', 'Київська'],\n  ['pidhorodne', 'Дніпропетровська'],\n  ['irpin', 'Київська'],\n  ['korolivka', 'Івано-Франківська'],    \n  ['rivne', 'Рівненська'],\n  ['kachanivka', 'Чернігівська'],\n  ['kodra', 'Київська'],\n  ['komarivka', 'Чернігівська'],         \n  ['solone', 'Дніпропетровська'],\n  ['chornomorsk', 'Одеська'],\n  ['katerynivka', 'Донецька'],           \n  ['ostroh', 'Рівненська'],\n  ['yasinia', 'Закарпатська'],\n  ['makariv', 'Київська'],\n  ['nizhyn', 'Чернігівська'],\n  ['illintsi', 'Вінницька'],\n  ['sloboda-selets', 'Житомирська'],\n  ['sarny', 'Рівненська'],\n  ['bobrytsia', 'Київська'],\n  ['kolonshchyna', 'Київська'],\n  ['illichanka', 'Одеська'],\n  ['pulivtsi', 'Хмельницька'],           \n  ['chornobyl', 'Київська'],\n  ['zviahel', 'Житомирська'],\n  ['brytivka', 'Одеська'],\n  ['mukachevo', 'Закарпатська'],\n  ['hatne', 'Київська'],\n  ['snovsk', 'Чернігівська'],\n  ['myrhorod', 'Полтавська'],\n  ['smoline', 'Кіровоградська'],\n  ['myhila', 'Миколаївська'],            \n  ['tatariv', 'Івано-Франківська'],\n  ['hora', 'Київська'],\n  ['ovruch', 'Житомирська'],\n  ['troitske', 'Луганська'],            \n  ['bereza', 'Рівненська'],              \n  ['kamianske', 'Дніпропетровська'],\n  ['zdovbytsia', 'Рівненська'],\n  ['zoria', 'Рівненська'],\n  ['rokytne', 'Київська'],              \n  ['lozuvatka', 'Дніпропетровська'],\n  ['slavsko', 'Львівська'],\n  ['smyha', 'Рівненська'],\n  ['holovyn', 'Житомирська'],\n  ['chornukhy', 'Полтавська'],\n  ['tomashhorod', 'Рівненська'],\n]);\n\nconst toKey = s => String(s || '')\n  .normalize('NFKD')\n  .toLowerCase()\n  .replace(/[їіґє]/g, m => ({'ї':'i','і':'i','ґ':'g','є':'ie'}[m]))\n  .trim();\n\nconst nowMs = Date.now();\nconst maxAgeMs = HOURS_BACK * 3600 * 1000;\n\nconst out = [];\n\nfor (const item of $input.all()) {\n  const st = item.json;\n\n  const cityRaw = st.cityName || st.settlement || st.localName || st.stationName || '';\n  const cityKey = toKey(cityRaw);\n  const oblast  = cityToOblast.get(cityKey) || null;\n\n  const plist = Array.isArray(st.pollutants) ? st.pollutants : [];\n  for (const p of plist) {\n    const polName = String(p.pol || '').toUpperCase().replace(/\\s+/g, '');\n    const isWanted = polName === 'PM2.5' || polName === 'PM25' || polName === WANT_POLLUTANT.toUpperCase().replace(/\\s+/g,'');\n    if (!isWanted) continue;\n\n    const val = Number(p.value);\n    const tsMs = Date.parse(p.time || p.timestamp || 0);  \n    if (!Number.isFinite(val) || !Number.isFinite(tsMs)) continue;\n\n    if (nowMs - tsMs > maxAgeMs) continue;\n\n    out.push({\n      json: {\n        city: String(cityRaw),\n        oblast,\n        pollutant: 'PM2.5',\n        value: val,\n        ts: Math.floor(tsMs / 1000),\n        unit: p.unit || 'µg/m³',\n        station: st.stationName || st.localName || st.id || null,\n        lat: st.latitude || null,\n        lon: st.longitude || null,\n      }\n    });\n  }\n}\n\nreturn out;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        592,
+        0
+      ],
+      "id": "17d78bfb-e74c-492e-9f49-080c1da6af4b",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all().map(i => i.json);\nconst byOblast = new Map();\n\nfor (const r of items) {\n  const key = r.oblast || 'Невідома область';\n  if (!byOblast.has(key)) byOblast.set(key, []);\n  byOblast.get(key).push(r.value);\n}\n\nfunction avg(arr){ return Math.round((arr.reduce((a,b)=>a+b,0)/arr.length)*100)/100; }\n\nconst rows = [];\nfor (const [oblast, arr] of byOblast) {\n  rows.push({ oblast, avg: avg(arr), n: arr.length });\n}\n\nrows.sort((a,b)=> b.avg - a.avg);\n\nconst lines = rows.map(r => `• ${r.oblast}: ${r.avg} µg/m³ (станцій: ${r.n})`);\nconst text = `PM2.5 — середні за областями (останні ~2 год)\\n` + lines.join('\\n');\n\nreturn [{\n  json: {\n    summary: text,\n    labels: rows.map(r=>r.oblast),\n    data: rows.map(r=>r.avg),\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        768,
+        0
+      ],
+      "id": "f7279efd-ef78-4877-9ea0-a084033e3e77",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "url": "={{\n  \"https://quickchart.io/chart?c=\" + encodeURIComponent(JSON.stringify({\n    type: 'bar',\n    data: {\n      labels: $json.labels,\n      datasets: [{ label: 'PM2.5 (µg/m³)', data: $json.data }]\n    },\n    options: {\n      plugins: { legend: { display: true } },\n      scales: { y: { beginAtZero: true } }\n    }\n  }))\n}}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        976,
+        0
+      ],
+      "id": "071abe47-2d16-4d31-8bea-13abc8b70df2",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "chatId": "174786113",
+        "text": "={{$json.summary}}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1216,
+        112
+      ],
+      "id": "4655558e-cd98-46fc-bebf-06b32de187e1",
+      "name": "Send a text message",
+      "webhookId": "7ad66de2-5a35-438d-8893-8e50a58e222f",
+      "credentials": {
+        "telegramApi": {
+          "id": "V4a9m8VyYssR64q1",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendPhoto",
+        "chatId": "174786113",
+        "binaryData": true,
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1216,
+        -64
+      ],
+      "id": "c1db4456-0fca-4835-8e21-937aa7d982d6",
+      "name": "Send a photo message",
+      "webhookId": "f2e24a14-dfcb-4c09-9668-cd32240e8b61",
+      "credentials": {
+        "telegramApi": {
+          "id": "V4a9m8VyYssR64q1",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send a photo message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a text message": {
+      "main": [
+        []
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "67b3b220-2cda-44ca-a3b4-c5ac67ddc3a4",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "4e5b0ec07144cbfc2bc5e3ffa2c8c6b23571e4ea9fc98b87f0501bd785e77be3"
+  },
+  "id": "DeNI71SYIbwrIGmt",
+  "tags": []
+}
