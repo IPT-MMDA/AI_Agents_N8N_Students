@@ -1,0 +1,415 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{\n  \"Використай ТІЛЬКИ дані нижче. Відібрати всі релевантні компанії. \" +\n  \"Поверни відповідь простим текстом українською, один пункт на рядок, \" +\n  \"БЕЗ будь-якого Markdown/кодових блоків, БЕЗ пояснень, тільки список.\\n\\n\" +\n  \"Запит:\\n\" + $json.query + \"\\n\\n\" +\n  \"Компанії (масив JSON):\\n\" + JSON.stringify($json.companies, null, 2) + \"\\n\\n\" +\n  \"Формат кожного рядка:\\n\" +\n  \"1. <Назва>, ЄДРПОУ: <код>\\n\" +\n  \"Якщо коду немає — постав «—».\\n\" +\n  \"Виведи лише нумерований список у вказаному форматі.\"\n}}\n",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        800,
+        192
+      ],
+      "id": "4f74f2ce-df20-4484-b320-cd28bc536cb2",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4.1-mini"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        752,
+        448
+      ],
+      "id": "b01bb9f8-0abe-4de5-8e49-a3a02e395bca",
+      "name": "OpenAI Chat Model1",
+      "credentials": {
+        "openAiApi": {
+          "id": "O5V1XBwjMVpLIxV8",
+          "name": "OpenAi account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -1248,
+        176
+      ],
+      "id": "82b754b0-e11f-4348-af65-dbedce22c030",
+      "name": "When chat message received",
+      "webhookId": "dede68bb-1a77-4e72-80bf-18dc91c46a0e"
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        896,
+        448
+      ],
+      "id": "38c98ea3-e383-4515-be74-dc2bedf03090",
+      "name": "Simple Memory"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "links",
+        "options": {}
+      },
+      "id": "d2d01908-9bdb-4d99-bc17-1550ca22419e",
+      "name": "Split out into items",
+      "type": "n8n-nodes-base.splitOut",
+      "position": [
+        -656,
+        304
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "operation": "extractHtmlContent",
+        "extractionValues": {
+          "values": [
+            {
+              "key": "data",
+              "cssSelector": "body",
+              "skipSelectors": "img,nav"
+            },
+            {
+              "key": "metaDesc",
+              "cssSelector": "meta[name=\"description\"]",
+              "returnValue": "attribute",
+              "attribute": "content"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4b8157de-9717-4364-89b4-f6dc8ca4ea81",
+      "name": "Extract Text Only",
+      "type": "n8n-nodes-base.html",
+      "position": [
+        -160,
+        304
+      ],
+      "typeVersion": 1.2
+    },
+    {
+      "parameters": {
+        "text": "={{ \n  \"Ти аналізуєш текст сторінки компанії. Поверни JSON за схемою нижче.\\n\\n=== ТЕКСТ ДЛЯ АНАЛІЗУ ===\\n\" +\n  ($json.metaDesc || $json.data || \"\")\n}}\n",
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"назва_організації\": { \"type\": \"string\" },\n    \"єдрпоу\": { \"type\": \"string\" },\n    \"місто\": { \"type\": \"string\" },\n    \"вид_діяльності\": { \"type\": \"string\" }\n  },\n  \"required\": [\"назва_організації\"]\n}\n",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.informationExtractor",
+      "typeVersion": 1,
+      "position": [
+        64,
+        304
+      ],
+      "id": "6abe82ac-32f9-4b7a-be3b-a2d8095ef049",
+      "name": "Information Extractor1"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        64,
+        512
+      ],
+      "id": "b5222091-f598-4a89-842d-ea0e39f3dedd",
+      "name": "OpenAI Chat Model3",
+      "credentials": {
+        "openAiApi": {
+          "id": "O5V1XBwjMVpLIxV8",
+          "name": "OpenAi account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "extractHtmlContent",
+        "extractionValues": {
+          "values": [
+            {
+              "key": "links",
+              "cssSelector": ".catalog-list__item a[href]",
+              "returnValue": "attribute",
+              "attribute": "href",
+              "returnArray": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "9e861a57-f5d6-428b-b1fb-8ecdb2125c35",
+      "name": "Extract contractor links",
+      "type": "n8n-nodes-base.html",
+      "position": [
+        -832,
+        304
+      ],
+      "typeVersion": 1.2
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.links && $json.links.startsWith('http')\n    ? $json.links\n    : 'https://vkursi.pro' + $json.links }}\n",
+        "options": {}
+      },
+      "id": "fe34148d-54c0-4392-bbfc-41bd49b6ded3",
+      "name": "Fetch texts",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        -336,
+        304
+      ],
+      "typeVersion": 4.2
+    },
+    {
+      "parameters": {
+        "url": "https://vkursi.pro/company/harkiv",
+        "options": {}
+      },
+      "id": "8194183c-98e0-47ba-aef1-675409c76b53",
+      "name": "Fetch Contractor List",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        -1008,
+        304
+      ],
+      "typeVersion": 4.2
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        432,
+        192
+      ],
+      "id": "2b2cfbd6-e431-4541-83d3-b4cf6332e9bd",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "maxItems": 10
+      },
+      "id": "e5642f5e-accb-4b4d-8734-9501a778f624",
+      "name": "Process",
+      "type": "n8n-nodes-base.limit",
+      "position": [
+        -512,
+        304
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "content": "## Tools",
+        "height": 272,
+        "width": 1072
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1072,
+        256
+      ],
+      "id": "39bac930-1976-46ea-8a0e-a8ae42880c78",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare one item for the LLM: { query, companies[] }\nconst query =\n  (items[0]?.json?.chatInput) ??               // из Merge\n  ($json.chatInput) ??                         // запасной вариант\n  '';\n\nconst companies = items\n  .map(i => i.json?.output)\n  .filter(Boolean); // на всякий случай убираем пустые\n\nreturn [{\n  json: { query, companies }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        192
+      ],
+      "id": "d9743c2b-254f-4085-8957-bb0359b27d66",
+      "name": "PrepareData"
+    }
+  ],
+  "connections": {
+    "AI Agent": {
+      "main": [
+        []
+      ]
+    },
+    "OpenAI Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "Fetch Contractor List",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split out into items": {
+      "main": [
+        [
+          {
+            "node": "Process",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Text Only": {
+      "main": [
+        [
+          {
+            "node": "Information Extractor1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Information Extractor1": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model3": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Information Extractor1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract contractor links": {
+      "main": [
+        [
+          {
+            "node": "Split out into items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch texts": {
+      "main": [
+        [
+          {
+            "node": "Extract Text Only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Contractor List": {
+      "main": [
+        [
+          {
+            "node": "Extract contractor links",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "PrepareData",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process": {
+      "main": [
+        [
+          {
+            "node": "Fetch texts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PrepareData": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "e2eb5d3cea2f5103c43fda38cc339adffbbc859b520ea1cff6e1fb7b1a6518dd"
+  }
+}
